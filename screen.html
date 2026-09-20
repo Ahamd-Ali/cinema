@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cinema Screen</title>
+    <style>
+        html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+        #video-frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #idle, #err {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center; text-align: center;
+            font-family: 'Segoe UI', Arial, sans-serif; font-weight: 600; pointer-events: none;
+        }
+        #idle { color: rgba(255,255,255,0.35); font-size: 6vw; background: #000; }
+        #err  { color: #ff6b6b; font-size: 3vw; padding: 4vw; box-sizing: border-box; background: rgba(0,0,0,0.85); }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="video-frame"></div>
+    <div id="idle">CINEMA</div>
+    <div id="err" class="hidden"></div>
+    <script>
+// Runs inside a DUI (an invisible browser page drawn onto the in-world screen).
+// Receives commands from client/main.lua through SendDuiMessage.
+
+let player = null;
+let playerReady = false;
+let queue = [];
+let volume = 100;
+let pauseAfterLoad = false;
+
+const idleEl = document.getElementById('idle');
+const errEl = document.getElementById('err');
+
+function showError(msg) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
+function clearError() { errEl.classList.add('hidden'); }
+
+// ---------- YouTube ----------
+const tag = document.createElement('script');
+tag.src = 'https://www.youtube.com/iframe_api';
+tag.onerror = () => showError('Could not load YouTube (check the game client internet access)');
+document.head.appendChild(tag);
+
+// YouTube now requires embedders to send a proper Referer header (Error 153 otherwise).
+// The IFrame API builds its own <iframe> and doesn't let us set the attribute directly,
+// so we catch it the instant it's inserted and patch it in before it starts loading.
+new MutationObserver((mutations, obs) => {
+    const frame = document.querySelector('#video-frame iframe, iframe#video-frame');
+    if (frame && !frame.hasAttribute('referrerpolicy')) {
+        frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    }
+}).observe(document.documentElement, { childList: true, subtree: true });
+
+function onYouTubeIframeAPIReady() {
+    player = new YT.Player('video-frame', {
+        host: 'https://www.youtube-nocookie.com',
+        width: '100%',
+        height: '100%',
+        playerVars: {
+            origin: window.location.origin,
+            autoplay: 1,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            iv_load_policy: 3,
+            modestbranding: 1,
+            playsinline: 1,
+            rel: 0
+        },
+        events: {
+            onReady: () => {
+                playerReady = true;
+                player.setVolume(volume);
+                const q = queue; queue = [];
+                q.forEach(handle);
+            },
+            onStateChange: (e) => {
+                if (e.data === YT.PlayerState.PLAYING && pauseAfterLoad) {
+                    pauseAfterLoad = false;
+                    player.pauseVideo();
+                }
+            },
+            onError: (e) => {
+                const messages = {
+                    2: 'Invalid YouTube link',
+                    5: 'Player error',
+                    100: 'Video not found or private',
+                    101: 'Embedding disabled by the video owner',
+                    150: 'Embedding disabled by the video owner',
+                    153: 'YouTube rejected the embed (Error 153)'
+                };
+                showError((messages[e.data] || 'Playback error') + ' [' + e.data + ']');
+            }
+        }
+    });
+}
+
+function extractYouTubeId(url) {
+    const idRe = /^[A-Za-z0-9_-]{11}$/;
+    try {
+        const u = new URL(String(url).trim());
+        const host = u.hostname.replace(/^(www\.|m\.|music\.)/, '');
+        let id = null;
+        if (host === 'youtu.be') {
+            id = u.pathname.slice(1).split('/')[0];
+        } else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+            if (u.pathname === '/watch') {
+                id = u.searchParams.get('v');
+            } else {
+                const m = u.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/?]+)/);
+                if (m) id = m[1];
+            }
+        }
+        if (id && idRe.test(id)) return id;
+    } catch (e) { /* not a URL */ }
+    return null;
+}
+
+// ---------- commands ----------
+function handle(msg) {
+    switch (msg.action) {
+        case 'load': {
+            const id = extractYouTubeId(msg.url || '');
+            if (!id) { showError('Invalid YouTube link'); return; }
+            clearError();
+            idleEl.classList.add('hidden');
+            pauseAfterLoad = (msg.playing === false);
+            player.loadVideoById({ videoId: id, startSeconds: Math.max(0, msg.timestamp || 0) });
+            player.setVolume(volume);
+            break;
+        }
+        case 'clear':
+            pauseAfterLoad = false;
+            player.stopVideo();
+            idleEl.classList.remove('hidden');
+            break;
+        case 'play':
+            player.seekTo(msg.timestamp || 0, true);
+            player.playVideo();
+            break;
+        case 'pause':
+            player.pauseVideo();
+            if (typeof msg.timestamp === 'number') player.seekTo(msg.timestamp, true);
+            break;
+        case 'seek':
+            player.seekTo(msg.timestamp || 0, true);
+            break;
+        case 'volume':
+            volume = Math.max(0, Math.min(100, msg.volume || 0));
+            player.setVolume(volume);
+            break;
+    }
+}
+
+window.addEventListener('message', (event) => {
+    let data = event.data;
+    if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch (e) { return; }
+    }
+    if (!data || !data.action) return;
+
+    if (data.action === 'volume') volume = Math.max(0, Math.min(100, data.volume || 0));
+
+    if (!playerReady) { queue.push(data); return; }
+    handle(data);
+});
+
+</script>
+</body>
+</html>
