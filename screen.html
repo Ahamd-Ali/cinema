@@ -75,7 +75,8 @@ const dbgEl = document.getElementById('dbg');
 let adMode = false;
 let lastTime = -1;
 let stuckSince = 0;
-let currentId = null;        // the video the remote loaded
+let unstartedSince = 0;
+let currentId = null;       // the video the remote loaded
 let expectedDuration = 0;    // its real length in seconds (0 = not known yet)
 let debugOn = false;
 let adReason = '';
@@ -89,7 +90,7 @@ function setAdMode(on) {
 
 setInterval(() => {
     if (!playerReady || !player || typeof player.getPlayerState !== 'function') return;
-    if (!wantPlaying) { stuckSince = 0; lastTime = -1; setAdMode(false); return; }
+    if (!wantPlaying) { stuckSince = 0; unstartedSince = 0; lastTime = -1; setAdMode(false); return; }
     const state = player.getPlayerState();
     const t = player.getCurrentTime() || 0;
     const dur = (player.getDuration && player.getDuration()) || 0;
@@ -98,7 +99,16 @@ setInterval(() => {
 
     let ad = false;
     adReason = '';
-    if (vid && currentId && vid !== currentId) {
+    // v6: tested in game - during a YouTube ad the player reports state -1 ("not started")
+    // with our own id / length / a time that does not move. The real video is 1 (playing) or 3 (buffering).
+    if (state === -1 || state === 5) {
+        if (!unstartedSince) unstartedSince = Date.now();
+    } else {
+        unstartedSince = 0;
+    }
+    if (unstartedSince && Date.now() - unstartedSince > 700) {
+        ad = true; adReason = 'not started (ad)';
+    } else if (vid && currentId && vid !== currentId) {
         ad = true; adReason = 'other video id';
     } else if (expectedDuration > 0 && dur > 0 && Math.abs(dur - expectedDuration) > 2) {
         ad = true; adReason = 'other length';
