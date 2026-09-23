@@ -42,6 +42,8 @@
     </div>
     <div id="idle">CINEMA</div>
     <div id="err" class="hidden"></div>
+    <div id="dbg" class="hidden" style="position:absolute;left:1%;top:1%;z-index:20;padding:0.6vw 1vw;background:rgba(0,0,0,0.8);
+        color:#0f0;font:bold 1.6vw Consolas,monospace;white-space:pre;pointer-events:none;"></div>
     <script>
 // Runs inside a DUI (an invisible browser page drawn onto the in-world screen).
 // Receives commands from client/main.lua through SendDuiMessage.
@@ -62,14 +64,21 @@ const errEl = document.getElementById('err');
 function showError(msg) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
 function clearError() { errEl.classList.add('hidden'); }
 
-// ---------- ad cover (v4) ----------
-// While YouTube plays an ad, the video's OWN time does not move (whatever state the player reports).
-// So: the remote wants the video playing + its time stands still for 1 second = ad (or loading)
+// ---------- ad cover (v5) ----------
+// An ad is detected when (any of):
+//  - the player plays a different video id than the one we loaded
+//  - the player's length differs from the real length of our video (sent by the server)
+//  - the time stands still for 1 second while it should play (loading / some ads)
 // -> the screen is covered and muted, so nobody sees or hears the ad.
 const adCoverEl = document.getElementById('adcover');
+const dbgEl = document.getElementById('dbg');
 let adMode = false;
 let lastTime = -1;
 let stuckSince = 0;
+let currentId = null;        // the video the remote loaded
+let expectedDuration = 0;    // its real length in seconds (0 = not known yet)
+let debugOn = false;
+let adReason = '';
 
 function setAdMode(on) {
     if (on === adMode) return;
@@ -83,19 +92,33 @@ setInterval(() => {
     if (!wantPlaying) { stuckSince = 0; lastTime = -1; setAdMode(false); return; }
     const state = player.getPlayerState();
     const t = player.getCurrentTime() || 0;
-    if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.ENDED) {
-        // stopped on purpose or finished: not an ad
-        stuckSince = 0;
-        setAdMode(false);
+    const dur = (player.getDuration && player.getDuration()) || 0;
+    let vid = '';
+    try { const vd = player.getVideoData && player.getVideoData(); vid = (vd && vd.video_id) || ''; } catch (e) { /* ignore */ }
+
+    let ad = false;
+    adReason = '';
+    if (vid && currentId && vid !== currentId) {
+        ad = true; adReason = 'other video id';
+    } else if (expectedDuration > 0 && dur > 0 && Math.abs(dur - expectedDuration) > 2) {
+        ad = true; adReason = 'other length';
+    } else if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.ENDED) {
+        stuckSince = 0; // stopped on purpose or finished
     } else if (lastTime < 0 || Math.abs(t - lastTime) < 0.05) {
         if (!stuckSince) stuckSince = Date.now();
-        if (Date.now() - stuckSince > 1000) setAdMode(true);
+        if (Date.now() - stuckSince > 1000) { ad = true; adReason = 'time stands still'; }
     } else {
-        // the video's time is moving again: the real video is showing
         stuckSince = 0;
-        setAdMode(false);
     }
+    setAdMode(ad);
     lastTime = t;
+
+    if (debugOn) {
+        dbgEl.textContent =
+            'state ' + state + '   ad ' + (adMode ? 'YES (' + adReason + ')' : 'no') + '\n' +
+            'id    ' + (vid || '-') + '  (want ' + (currentId || '-') + ')\n' +
+            'time  ' + t.toFixed(1) + ' / ' + dur.toFixed(1) + '  (real length ' + (expectedDuration || '?') + ')';
+    }
 }, 250);
 
 // ---------- YouTube ----------
@@ -195,6 +218,9 @@ function handle(msg) {
             idleEl.classList.add('hidden');
             pauseAfterLoad = (msg.playing === false);
             wantPlaying = !pauseAfterLoad;
+            if (id !== currentId) expectedDuration = 0;
+            currentId = id;
+            if (msg.duration > 0) expectedDuration = msg.duration;
             player.loadVideoById({ videoId: id, startSeconds: Math.max(0, msg.timestamp || 0) });
             player.setVolume(volume);
             break;
@@ -202,6 +228,8 @@ function handle(msg) {
         case 'clear':
             pauseAfterLoad = false;
             wantPlaying = false;
+            currentId = null;
+            expectedDuration = 0;
             player.stopVideo();
             idleEl.classList.remove('hidden');
             break;
@@ -214,6 +242,7 @@ function handle(msg) {
             if (wantPlaying) player.playVideo();
             break;
         case 'sync': { // sent by the server every few seconds: keep every player on the exact same second
+            if (msg.duration > 0) expectedDuration = msg.duration;
             if (typeof player.getCurrentTime !== 'function') break;
             if (adMode) break; // an ad is on: correct the time once the ad is over
             const target = Math.max(0, msg.timestamp || 0);
@@ -241,6 +270,10 @@ function handle(msg) {
         case 'volume':
             volume = Math.max(0, Math.min(100, msg.volume || 0));
             player.setVolume(volume);
+            break;
+        case 'debug': // /cinemadebug: shows what YouTube reports, on the screen itself
+            debugOn = !!msg.on;
+            dbgEl.classList.toggle('hidden', !debugOn);
             break;
     }
 }
