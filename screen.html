@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Fv_Cinema - © Five Dev - جميع الحقوق محفوظة -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -30,6 +31,10 @@ let playerReady = false;
 let queue = [];
 let volume = 100;
 let pauseAfterLoad = false;
+// what the remote wants (v2). If the video pauses on its own (e.g. the "Skip ad" clicks hit the
+// video instead of the Skip button), it is resumed right away.
+let wantPlaying = false;
+let lastCommand = 0;
 
 const idleEl = document.getElementById('idle');
 const errEl = document.getElementById('err');
@@ -80,6 +85,11 @@ function onYouTubeIframeAPIReady() {
                 if (e.data === YT.PlayerState.PLAYING && pauseAfterLoad) {
                     pauseAfterLoad = false;
                     player.pauseVideo();
+                    return;
+                }
+                // paused without an order from the remote -> play again
+                if (e.data === YT.PlayerState.PAUSED && wantPlaying && Date.now() - lastCommand > 500) {
+                    setTimeout(() => { if (wantPlaying) player.playVideo(); }, 150);
                 }
             },
             onError: (e) => {
@@ -120,6 +130,7 @@ function extractYouTubeId(url) {
 
 // ---------- commands ----------
 function handle(msg) {
+    lastCommand = Date.now();
     switch (msg.action) {
         case 'load': {
             const id = extractYouTubeId(msg.url || '');
@@ -127,20 +138,43 @@ function handle(msg) {
             clearError();
             idleEl.classList.add('hidden');
             pauseAfterLoad = (msg.playing === false);
+            wantPlaying = !pauseAfterLoad;
             player.loadVideoById({ videoId: id, startSeconds: Math.max(0, msg.timestamp || 0) });
             player.setVolume(volume);
             break;
         }
         case 'clear':
             pauseAfterLoad = false;
+            wantPlaying = false;
             player.stopVideo();
             idleEl.classList.remove('hidden');
             break;
         case 'play':
+            wantPlaying = true;
             player.seekTo(msg.timestamp || 0, true);
             player.playVideo();
             break;
+        case 'resume': // play again without jumping (sent after the "Skip ad" clicks)
+            if (wantPlaying) player.playVideo();
+            break;
+        case 'sync': { // sent by the server every few seconds: keep every player on the exact same second
+            if (typeof player.getCurrentTime !== 'function') break;
+            const target = Math.max(0, msg.timestamp || 0);
+            const dur = player.getDuration ? player.getDuration() : 0;
+            if (dur > 0 && target >= dur - 1) break; // the video already ended
+            const state = player.getPlayerState();
+            const drift = Math.abs(player.getCurrentTime() - target);
+            wantPlaying = !!msg.playing;
+            if (drift > (msg.tolerance || 1.5)) player.seekTo(target, true);
+            if (msg.playing) {
+                if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) player.playVideo();
+            } else if (state === YT.PlayerState.PLAYING) {
+                player.pauseVideo();
+            }
+            break;
+        }
         case 'pause':
+            wantPlaying = false;
             player.pauseVideo();
             if (typeof msg.timestamp === 'number') player.seekTo(msg.timestamp, true);
             break;
