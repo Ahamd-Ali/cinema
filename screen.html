@@ -35,6 +35,9 @@
 </head>
 <body>
     <div id="video-frame"></div>
+    <!-- v7: catches the script's "Skip" click when NO ad is showing, so it can never pause the video.
+         Hidden during an ad, so the click reaches YouTube's Skip button. -->
+    <div id="shield" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;background:transparent;"></div>
     <div id="adcover" class="hidden">
         <div class="t1">العرض يبدأ خلال لحظات</div>
         <div class="dots"><span></span><span></span><span></span></div>
@@ -85,6 +88,7 @@ function setAdMode(on) {
     if (on === adMode) return;
     adMode = on;
     adCoverEl.classList.toggle('hidden', !on);
+    document.getElementById('shield').classList.toggle('hidden', on);
     try { if (on) player.mute(); else player.unMute(); } catch (e) { /* player not ready */ }
 }
 
