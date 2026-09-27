@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fv_MDT</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="hidden">
+    <div class="mdt">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo">MDT</div>
+                <div class="brand-sub">Mobile Data Terminal</div>
+            </div>
+            <nav id="nav">
+                <button class="nav-btn active" data-tab="dashboard" data-perm="mdt.open">🏠 <span>Dashboard</span></button>
+                <button class="nav-btn" data-tab="profiles" data-perm="profiles.view">👤 <span>Profiles</span></button>
+                <button class="nav-btn" data-tab="warrants" data-perm="warrants.view">📜 <span>Warrants</span></button>
+                <button class="nav-btn" data-tab="bolos" data-perm="bolo.view">🚨 <span>BOLOs</span></button>
+                <button class="nav-btn" data-tab="reports" data-perm="reports.view">📝 <span>Reports</span></button>
+                <button class="nav-btn" data-tab="vehicles" data-perm="vehicles.view">🚗 <span>Vehicles</span></button>
+                <button class="nav-btn" data-tab="roster" data-perm="roster.view">🛡️ <span>Roster</span></button>
+                <button class="nav-btn" data-tab="audit" data-perm="admin.audit">🧾 <span>Audit Log</span></button>
+            </nav>
+            <div class="me">
+                <div class="me-name" id="meName">—</div>
+                <div class="me-rank" id="meRank">—</div>
+                <button id="btnClose" class="btn btn-ghost">Close (ESC)</button>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="content">
+            <header class="topbar">
+                <h1 id="pageTitle">Dashboard</h1>
+                <div class="clock" id="clock"></div>
+            </header>
+
+            <!-- DASHBOARD -->
+            <section class="tab active" id="tab-dashboard">
+                <div class="cards">
+                    <div class="card stat"><div class="stat-num" id="dashWarrants">0</div><div class="stat-lbl">Active Warrants</div></div>
+                    <div class="card stat"><div class="stat-num" id="dashBolos">0</div><div class="stat-lbl">Active BOLOs</div></div>
+                    <div class="card stat"><div class="stat-num" id="dashGroup">—</div><div class="stat-lbl">Access Level</div></div>
+                </div>
+                <div class="grid-2">
+                    <div class="card"><h3>Latest Warrants</h3><div id="dashWarrantList" class="list"></div></div>
+                    <div class="card"><h3>Latest BOLOs</h3><div id="dashBoloList" class="list"></div></div>
+                </div>
+            </section>
+
+            <!-- PROFILES -->
+            <section class="tab" id="tab-profiles">
+                <div class="toolbar">
+                    <input id="profSearch" class="input" placeholder="Search name / phone / citizen id…">
+                    <button class="btn" id="profSearchBtn">Search</button>
+                </div>
+                <div class="split">
+                    <div id="profResults" class="list narrow"></div>
+                    <div id="profDetail" class="card grow"><div class="empty">Select a citizen to view their file.</div></div>
+                </div>
+            </section>
+
+            <!-- WARRANTS -->
+            <section class="tab" id="tab-warrants">
+                <div class="toolbar">
+                    <button class="btn" data-perm="warrants.create" id="newWarrantBtn">+ New Warrant</button>
+                    <div class="spacer"></div>
+                    <select id="warrantFilter" class="input">
+                        <option value="active">Active</option>
+                        <option value="closed">Closed</option>
+                    </select>
+                </div>
+                <div id="warrantList" class="list"></div>
+            </section>
+
+            <!-- BOLOS -->
+            <section class="tab" id="tab-bolos">
+                <div class="toolbar">
+                    <button class="btn" data-perm="bolo.create" id="newBoloBtn">+ New BOLO</button>
+                    <div class="spacer"></div>
+                    <select id="boloFilter" class="input">
+                        <option value="active">Active</option>
+                        <option value="closed">Closed</option>
+                    </select>
+                </div>
+                <div id="boloList" class="cards wrap"></div>
+            </section>
+
+            <!-- REPORTS -->
+            <section class="tab" id="tab-reports">
+                <div class="toolbar">
+                    <input id="reportSearch" class="input" placeholder="Search reports…">
+                    <button class="btn" id="reportSearchBtn">Search</button>
+                    <div class="spacer"></div>
+                    <button class="btn" data-perm="reports.create" id="newReportBtn">+ New Report</button>
+                </div>
+                <div id="reportList" class="list"></div>
+            </section>
+
+            <!-- VEHICLES -->
+            <section class="tab" id="tab-vehicles">
+                <div class="toolbar">
+                    <input id="plateInput" class="input" placeholder="Plate…" maxlength="8">
+                    <button class="btn" id="plateLookupBtn">Lookup</button>
+                    <button class="btn btn-ghost" id="plateScanBtn">Scan Nearby</button>
+                </div>
+                <div id="vehicleResult" class="card"><div class="empty">Enter a plate to run it.</div></div>
+            </section>
+
+            <!-- ROSTER -->
+            <section class="tab" id="tab-roster">
+                <div id="rosterList" class="list"></div>
+            </section>
+
+            <!-- AUDIT -->
+            <section class="tab" id="tab-audit">
+                <div id="auditList" class="list"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-box">
+            <div class="modal-head"><h3 id="modalTitle">Title</h3><button id="modalClose" class="btn btn-ghost">✕</button></div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-foot" id="modalFoot"></div>
+        </div>
+    </div>
+    <div id="toast" class="toast hidden"></div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
